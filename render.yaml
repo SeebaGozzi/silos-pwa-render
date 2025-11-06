@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: silos-pwa-backend
+    env: python
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && gunicorn app:app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: PYTHONPATH
+        value: backend
+      - key: FLASK_ENV
+        value: production
+      # Set DATABASE_URL in Render dashboard for Postgres. If not set, app uses SQLite file.
+    autoDeploy: true

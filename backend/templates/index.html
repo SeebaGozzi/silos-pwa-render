@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SLG Agro - Gestión de Silos</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0d9488">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- React (prod) + Babel for JSX in-browser -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Simple logo (placeholder). Replace with your real SVG/PNG if desired -->
+  <style>
+    html, body, #root { height: 100%; }
+    body { background: #0f172a; }
+  </style>
+</head>
+<body class="text-slate-100">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const API = "/api";
+
+    const notify = (msg, ok=true) => {
+      const el = document.createElement("div");
+      el.className = "fixed top-4 right-4 px-4 py-2 rounded-xl shadow-xl " + (ok ? "bg-emerald-600" : "bg-rose-600");
+      el.innerText = msg;
+      document.body.appendChild(el);
+      setTimeout(()=> el.remove(), 2800);
+    };
+
+    function useFetch(url, deps=[]) {
+      const [data, setData] = React.useState(null);
+      const [loading, setLoading] = React.useState(true);
+      const [error, setError] = React.useState(null);
+      React.useEffect(()=>{
+        let active = true;
+        setLoading(true);
+        fetch(url).then(r=>r.json()).then(d=>{
+          if (!active) return;
+          setData(d); setLoading(false);
+        }).catch(e=>{
+          if (!active) return;
+          setError(e); setLoading(false);
+        });
+        return ()=> { active=false };
+      }, deps);
+      return {data, loading, error, setData};
+    }
+
+    function Logo() {
+      return (
+        <div className="flex items-center gap-3">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" fill="#14b8a6"/>
+            <path d="M7 15h10l-1 2H8l-1-2zM7 9h10l-1 2H8L7 9z" fill="#0f172a"/>
+          </svg>
+          <div className="text-xl font-bold">SLG Agro — Silos</div>
+        </div>
+      );
+    }
+
+    function Button({children, onClick, className=""}) {
+      return (
+        <button onClick={onClick} className={"w-full rounded-2xl px-5 py-4 bg-teal-600 hover:bg-teal-500 active:bg-teal-700 transition shadow-lg " + className}>
+          <span className="font-semibold">{children}</span>
+        </button>
+      );
+    }
+
+    function Menu({go}){
+      return (
+        <div className="max-w-md mx-auto mt-10 space-y-4">
+          <div className="flex justify-center"><Logo/></div>
+          <div className="grid gap-3 mt-6">
+            <Button onClick={()=>go('crear')}>Crear Silo</Button>
+            <Button onClick={()=>go('gestionar')}>Gestionar Silos</Button>
+            <Button onClick={()=>go('editar')}>Editar</Button>
+            <Button onClick={()=>go('resumen')}>Resumen de operaciones</Button>
+          </div>
+        </div>
+      )
+    }
+
+    function CrearSilo({go}){
+      const [name, setName] = React.useState("");
+      const submit = async () => {
+        const r = await fetch(API + "/silos", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({name})});
+        const d = await r.json();
+        if (r.ok) {
+          notify(d.message, true);
+          setName("");
+        } else notify(d.error||"Error al crear silo", false);
+      };
+      return (
+        <div className="max-w-md mx-auto mt-10 space-y-4">
+          <button className="text-teal-400" onClick={()=>go('menu')}>← Volver</button>
+          <h2 className="text-2xl font-bold">Crear Silo</h2>
+          <input value={name} onChange={e=>setName(e.target.value)} placeholder="Nombre del silo" className="w-full rounded-xl px-4 py-3 bg-slate-800 outline-none border border-slate-700" />
+          <Button onClick={submit}>Guardar</Button>
+        </div>
+      )
+    }
+
+    function GestionarSilos({go}){
+      const {data: silos, loading, setData} = useFetch(API + "/silos", [/*load once*/]);
+      const [selected, setSelected] = React.useState(null);
+      const [amount, setAmount] = React.useState("");
+      const [cereal, setCereal] = React.useState("Soja");
+
+      const refresh = async ()=>{
+        const r = await fetch(API + "/silos");
+        const d = await r.json();
+        setData(d);
+      };
+
+      const cargar = async () => {
+        if (!selected) return;
+        const silo = silos.find(s=> s.id == selected);
+        const payload = { amount: parseInt(amount||0,10) };
+        if (silo.balance_kg === 0 && !silo.cereal) payload.cereal = cereal;
+        const r = await fetch(`${API}/silos/${selected}/cargar`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload)});
+        const d = await r.json();
+        if (r.ok) { notify("Carga registrada"); setAmount(""); await refresh(); }
+        else notify(d.error||"Error", false);
+      };
+
+      const descargar = async () => {
+        if (!selected) return;
+        const r = await fetch(`${API}/silos/${selected}/descargar`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({amount: parseInt(amount||0,10)})});
+        const d = await r.json();
+        if (r.ok) { notify("Descarga registrada"); setAmount(""); await refresh(); }
+        else notify(d.error||"Error", false);
+      };
+
+      return (
+        <div className="max-w-2xl mx-auto mt-10 space-y-4">
+          <button className="text-teal-400" onClick={()=>go('menu')}>← Volver</button>
+          <h2 className="text-2xl font-bold">Gestionar Silos</h2>
+          {loading ? <div>Cargando...</div> : (
+            <div className="space-y-4">
+              <select value={selected||""} onChange={e=>setSelected(e.target.value)} className="w-full rounded-xl px-4 py-3 bg-slate-800 border border-slate-700">
+                <option value="" disabled>Selecciona un silo</option>
+                {silos.map(s=> <option key={s.id} value={s.id}>{s.name} — {s.cereal || "Sin cereal"} — {s.balance_kg} kg</option>)}
+              </select>
+
+              {/* Mostrar Scroll de cereal si el silo seleccionado está vacío y sin cereal */}
+              {selected && (()=>{
+                const s = silos.find(x=> x.id == selected);
+                if (s && s.balance_kg === 0 && !s.cereal) {
+                  return (
+                    <div>
+                      <label className="block mb-1 text-sm text-slate-300">Seleccione cereal (obligatorio en primera carga)</label>
+                      <select value={cereal} onChange={e=>setCereal(e.target.value)} className="w-full rounded-xl px-4 py-3 bg-slate-800 border border-slate-700">
+                        {["Soja","Maiz","Trigo","Girasol"].map(c=> <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                  )
+                }
+                return null;
+              })()}
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <input value={amount} onChange={e=>setAmount(e.target.value)} placeholder="Kilos" type="number" className="rounded-xl px-4 py-3 bg-slate-800 border border-slate-700" />
+                <Button onClick={cargar}>Cargar</Button>
+                <Button onClick={descargar} className="bg-rose-600 hover:bg-rose-500">Descargar</Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )
+    }
+
+    function Editar({go}){
+      const {data: silos, loading, setData} = useFetch(API + "/silos", []);
+      const [selected, setSelected] = React.useState(null);
+      const [newName, setNewName] = React.useState("");
+
+      const refresh = async ()=>{
+        const r = await fetch(API + "/silos");
+        const d = await r.json();
+        setData(d);
+      };
+
+      const renombrar = async () => {
+        if (!selected) return;
+        const r = await fetch(`${API}/silos/${selected}`, {
+          method:"PATCH",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({name: newName})
+        });
+        const d = await r.json();
+        if (r.ok) { notify("Nombre actualizado"); setNewName(""); await refresh(); }
+        else notify(d.error||"Error", false);
+      };
+
+      const eliminar = async () => {
+        if (!selected) return;
+        if (!confirm("¿Eliminar este silo y sus movimientos?")) return;
+        const r = await fetch(`${API}/silos/${selected}`, {method:"DELETE"});
+        const d = await r.json();
+        if (r.ok) { notify("Silo eliminado"); await refresh(); setSelected(null); }
+        else notify(d.error||"Error", false);
+      };
+
+      return (
+        <div className="max-w-2xl mx-auto mt-10 space-y-4">
+          <button className="text-teal-400" onClick={()=>go('menu')}>← Volver</button>
+          <h2 className="text-2xl font-bold">Editar</h2>
+          {loading ? <div>Cargando...</div> : (
+            <div className="space-y-4">
+              <select value={selected||""} onChange={e=>setSelected(e.target.value)} className="w-full rounded-xl px-4 py-3 bg-slate-800 border border-slate-700">
+                <option value="" disabled>Selecciona un silo</option>
+                {silos.map(s=> <option key={s.id} value={s.id}>{s.name} — {s.cereal || "Sin cereal"} — {s.balance_kg} kg</option>)}
+              </select>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Nuevo nombre" className="rounded-xl px-4 py-3 bg-slate-800 border border-slate-700" />
+                <Button onClick={renombrar}>Renombrar</Button>
+                <Button onClick={eliminar} className="bg-rose-600 hover:bg-rose-500">Eliminar</Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )
+    }
+
+    function Resumen({go}){
+      const {data: ops, loading} = useFetch(API + "/resumen", []);
+      return (
+        <div className="max-w-3xl mx-auto mt-10 space-y-4">
+          <button className="text-teal-400" onClick={()=>go('menu')}>← Volver</button>
+          <h2 className="text-2xl font-bold">Resumen de operaciones</h2>
+          {loading ? <div>Cargando...</div> : (
+            <div className="grid gap-2">
+              {(ops||[]).map(o=> (
+                <div key={o.id} className="rounded-xl bg-slate-800 px-4 py-3 border border-slate-700 flex justify-between">
+                  <div>
+                    <div className="font-semibold">{o.silo_name}</div>
+                    <div className="text-sm text-slate-300">{o.timestamp}</div>
+                  </div>
+                  <div className={"font-bold " + (o.type==="CARGA" ? "text-emerald-400" : "text-rose-400")}>
+                    {o.type === "CARGA" ? "+" : "-"}{o.amount} kg
+                  </div>
+                </div>
+              ))}
+              {(!ops || ops.length===0) && <div className="text-slate-300">Sin movimientos aún.</div>}
+            </div>
+          )}
+        </div>
+      )
+    }
+
+    function App(){
+      const [page, setPage] = React.useState('menu');
+      const go = setPage;
+      React.useEffect(()=>{
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.register('/service-worker.js');
+        }
+      }, []);
+      return (
+        <div className="min-h-full p-4">
+          {page === 'menu' && <Menu go={go} />}
+          {page === 'crear' && <CrearSilo go={go} />}
+          {page === 'gestionar' && <GestionarSilos go={go} />}
+          {page === 'editar' && <Editar go={go} />}
+          {page === 'resumen' && <Resumen go={go} />}
+        </div>
+      )
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App/>);
+  </script>
+</body>
+</html>
