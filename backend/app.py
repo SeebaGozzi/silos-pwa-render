@@ -14,6 +14,9 @@ def get_database_url():
         # Render sometimes provides postgres://; SQLAlchemy needs postgresql://
         if url.startswith("postgres://"):
             url = url.replace("postgres://", "postgresql://", 1)
+        # Use psycopg (v3) driver explicitly for SQLAlchemy
+        if url.startswith("postgresql://"):
+            url = url.replace("postgresql://", "postgresql+psycopg://", 1)
         return url
     # Fallback local SQLite for dev
     return "sqlite:///silos.db"
